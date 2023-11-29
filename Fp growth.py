@@ -12,13 +12,9 @@ with open(file_path, 'r') as file:
 itemCnt = np.zeros(120)
 for i in data:
     itemCnt[i]+=1
-def print_bit(n):
-    ret=""
-    while(n):
-        if(n&1):
-            ret+='1'
-        else:
-            ret+='0'
+def int_to_binary(n):
+    binary_str = bin(n)
+    return binary_str[2:]
 
 minCnt=4
 delete_bit=0
@@ -26,4 +22,14 @@ for i in range(119,1,-1):
     if itemCnt[i] < minCnt:
         delete_bit|=(1<<i)
 
-print(delete_bit)
+# print(delete_bit)
+print(int_to_binary(delete_bit))
+
+processed_data = np.array(8125)
+
+a = 86
+print(int_to_binary(a))
+print(a&-a)
+print(int_to_binary(~(1<<(a&-a))))
+a &=~(1<<(a&-a))
+print(int_to_binary(a))
