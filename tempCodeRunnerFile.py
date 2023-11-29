@@ -1,3 +1,2 @@
-et(i)
-    # for j in st:
-    #     p2[
+:
+#     print(int_to_binary(i))
