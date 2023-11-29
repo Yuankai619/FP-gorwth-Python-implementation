@@ -50,8 +50,8 @@ for i in range(0,120):
     itemCnt[i][1]=i
 sorted_itemCnt=itemCnt[np.argsort(itemCnt[:, 0])]
 # #debug
-# for id,i in enumerate(sorted_itemCnt):
-#     print(id,i[0],i[1],sep=":")
+for id,i in enumerate(sorted_itemCnt):
+    print(id,i[0],i[1],sep=":")
 
 mask = (1<<27)-1
 delete_mask=~delete_mask&mask
@@ -86,13 +86,17 @@ allset=[]
 for i in sorted_itemCnt:#i是現在tree的index
     if i[0]<2:
         continue
+    print(f"now tree idx: {i[1]}")
     for j in range(0,tops[i[1]]):# 遍歷所有子樹,j是子樹的index
         bit = 2
         itemSet = []
+        print("other set node: ")
         for k in range(1,27):
             if bit&trees[i[1]][j] and match[i[1]][k]>=2:
+                print(k,end="")
                 itemSet.append(k)
         allset.append(itemSet)
+        print("\n")
 
 for i in allset:
     print(i)
