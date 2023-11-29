@@ -82,6 +82,7 @@ for i in range(1,27):
                 if bit&data:#第k個item有跟i一起出現在同一筆，match[i][k]+=1
                     match[i][k]+=1
                 bit<<=1
+vis = np.zeros(27,dtype=int)
 allset=[]
 for i in sorted_itemCnt:#i是現在tree的index
     if i[0]<2:
@@ -92,14 +93,17 @@ for i in sorted_itemCnt:#i是現在tree的index
         itemSet = []
         print("other set node: ")
         for k in range(1,27):
-            if bit&trees[i[1]][j] and match[i[1]][k]>=2:
-                print(k,end="")
+            if bit&trees[i[1]][j] and match[i[1]][k]>=2 and vis[k]==0:
+                # print(k,end="")
                 itemSet.append(k)
+            bit<<=1
+        print(itemSet)
         allset.append(itemSet)
-        print("\n")
+    i[0]=0
+    vis [i[1]]=1
 
-for i in allset:
-    print(i)
+# for i in allset:
+#     print(i)
 
 #debug
 # for i in range(1,27):
