@@ -7,7 +7,6 @@ from multiprocessing import Pool
 start_time = time.time()
 file_path = 'date/mushroom.dat'
 SIZE =8125  
-processed_data =[0]*SIZE# 0 base
 def int_to_binary(n):
     rs=""
     while n:
@@ -18,44 +17,91 @@ def int_to_binary(n):
         n>>=1
     return rs[::-1]
 # read data and transform to bit 
+data =[]
 with open(file_path, 'r') as file:
-    id=0
     for line in file:
         row = [int(x) for x in line.strip().split()]
-        for i in row:
-            processed_data[id]|=(1<<i)
-        id+=1
-
+        data.append(row)
 #debug
+# for i in data:
+#     print(i)
+
+# #count item count in itemCnt 
+itemCnt = np.zeros(120,dtype=int)
+for i in data:
+    for j in i:
+        itemCnt[j]+=1
+
+class TreeNode:
+    def __init__(self, value=None):
+        self.value = value
+        self.count = 1
+        self.children = {}
+        self.parent = None
+
+class Trie:
+    def __init__(self):
+        self.root = TreeNode()
+        self.leaves = []
+
+    def insert(self, items):
+        node = self.root
+        for element in items:
+            if element not in node.children:
+                new_node = TreeNode(element)
+                new_node.parent = node
+                node.children[element] = new_node
+            else:
+                node.children[element].count += 1
+            node = node.children[element]
+        self.leaves.append(node)
+
+    def traverse_to_root(self, leaf):
+        path = []
+        node = leaf
+        while node.parent is not None:
+            path.append(node.value)
+            node = node.parent
+        return path[::-1]
+def print_trie(node, level=0):
+    # Base case: if the node is None, return
+    if node is None:
+        return
+
+    # Print the current node
+    indent = " " * (level * 4)
+    node_info = f"{indent}Node: {node.value}, Count: {node.count}" if node.value is not None else "Root"
+    print(node_info)
+
+    # Recursively print each child
+    for child in node.children.values():
+        print_trie(child, level + 1)
+
+
 # for i in processed_data:
-#     print(int_to_binary(i))
-
-#count item count in itemCnt 
-itemCnt = np.zeros((120,2),dtype=int)
-for i in processed_data:
-    tmp = i
-    # itemCnt[i][1]=idx
-    while tmp:
-        lb=tmp&-tmp
-        tmp &= ~lb
-        id=0
-        while lb:
-            lb>>=1
-            id+=1
-        itemCnt[id-1][0]+=1
-minCnt=2
-delete_mask=0
-for i in range(0,120):
-    if itemCnt[i][0] < minCnt:
-        delete_mask|=(1<<i)
+#     tmp = i
+#     # itemCnt[i][1]=idx
+#     while tmp:
+#         lb=tmp&-tmp
+#         tmp &= ~lb
+#         id=0
+#         while lb:
+#             lb>>=1
+#             id+=1
+#         itemCnt[id-1][0]+=1
+# minCnt=2
+# delete_mask=0
+# for i in range(0,120):
+#     if itemCnt[i][0] < minCnt:
+#         delete_mask|=(1<<i)
 
 
-for i in range(0,120):
-    itemCnt[i][1]=i
-sorted_itemCnt=itemCnt[np.argsort(itemCnt[:, 0])]
-# #debug
-# for id,i in enumerate(sorted_itemCnt):
-#     print(id,i[0],i[1],sep=":")
+# for i in range(0,120):
+#     itemCnt[i][1]=i
+# sorted_itemCnt=itemCnt[np.argsort(itemCnt[:, 0])]
+# # #debug
+# # for id,i in enumerate(sorted_itemCnt):
+# #     print(id,i[0],i[1],sep=":")
 
 mask = (1<<120)-1
 delete_mask=~delete_mask&mask
