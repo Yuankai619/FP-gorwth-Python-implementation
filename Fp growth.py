@@ -44,11 +44,11 @@ class TreeNode:
 class Trie:
     def __init__(self):
         self.root = TreeNode()
-        self.leaves = set()
+        self.leaves = []
 
-    def insert(self, items):
+    def insert(self, array):
         node = self.root
-        for element in items:
+        for element in array:
             if itemCnt[element] < requireSize:
                 continue
             if element not in node.children:
@@ -58,7 +58,25 @@ class Trie:
             else:
                 node.children[element].count += 1
             node = node.children[element]
-        self.leaves.add(node)
+
+        # Update the leaves
+        self._update_leaves(node)
+
+    def _update_leaves(self, node):
+        # Remove the node from leaves if it has children
+        if node.children and node in self.leaves:
+            self.leaves.remove(node)
+
+        # Traverse up to remove any ancestor nodes that are no longer leaves
+        current = node.parent
+        while current and current != self.root:
+            if current.children and current in self.leaves:
+                self.leaves.remove(current)
+            current = current.parent
+
+        # Add the node as a leaf if it's not in leaves and has no children
+        if not node.children and node not in self.leaves:
+            self.leaves.append(node)
 
     def path_to_root(self, leaf):
         path = []
@@ -68,17 +86,12 @@ class Trie:
             node = node.parent
         return path[::-1]
     def remove_leaf(self, leaf):
-        if leaf is None or leaf.parent is None:
+        if leaf is None or leaf.parent is None or leaf not in self.leaves:
             return
-
-        if leaf in self.leaves:
-            self.leaves.remove(leaf)
-
         parent = leaf.parent
-        if leaf.value in parent.children:
-            del parent.children[leaf.value]
-            if not parent.children:
-                self.leaves.add(parent)
+        del parent.children[leaf.value]
+        self.leaves.remove(leaf)
+        self._update_leaves(parent)
 
 def print_trie(node, level=0):
     # Base case: if the node is None, return
@@ -96,7 +109,9 @@ def print_trie(node, level=0):
 FPTree=Trie()
 for row in data:
     row = sorted(row,key=lambda x: itemCnt[x], reverse=True)
+    print(row)
     FPTree.insert(row)
+
 print_trie(FPTree.root)
 
 tops = np.zeros(27,dtype=int)
@@ -104,20 +119,22 @@ itemSets = np.zeros((27,27),dtype=int)
 setsCnt = np.zeros((27,27),dtype=int)
 
 while FPTree.root.children:#remove leaf until tree is Null
-    for i in FPTree.leaves:
-        print(i.value,end=",")
-    print("")
-    for leaf in FPTree.leaves:
+    # print("Leaves: ")
+    # for i in FPTree.leaves:
+    #     print(i.value,end=",")
+    # print("")
+    leaves = list(FPTree.leaves)
+    for leaf in leaves:
         # print(f"before: {leaf.value}")
         path = FPTree.path_to_root(leaf)
         # print(f"after: {leaf.value}")
-        print(path)
+        # print(path)
         for i in path:
             setsCnt[leaf.value][i]+=leaf.count
-    copy = FPTree.leaves
-    for leaf in copy:
+    for leaf in leaves:
         FPTree.remove_leaf(leaf)
-    print("-"*10)
+    # print_trie(FPTree.root)
+    # print("-"*10)
 for i in range(1,27):
     for j in range(1,27):
         if setsCnt[i][j] >= requireSize:
@@ -128,4 +145,3 @@ for i in range(1,27):
     for j in range(0,tops[i]+1):
         print(itemSets[i][j],end=" ")
     print("")
-  
