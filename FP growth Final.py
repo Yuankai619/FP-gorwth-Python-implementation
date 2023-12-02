@@ -1,170 +1,224 @@
-import numpy as np
-import time
-from numba import jit
-import numba as nb
+from collections import defaultdict
+from itertools import combinations
 from multiprocessing import Pool
+import time
 
-start_time = time.time()
-file_path = 'date/mushroom.dat'
-SIZE =8125  
-def int_to_binary(n):
-    rs=""
-    while n:
-        if n&1:
-            rs+='1'
+CPU_COUNT = 24
+PATTERN_LEN = 10          #最多一次看5個item   
+MIN_SUPPORT = 813        #最少出現次數
+MIN_CONFIDENCE = 0.8    #confidence最低門檻
+#--------------------------載入data----------------------------
+def LoadData():
+  with open("date/mushroom.dat", 'r') as f:
+    data = []
+    for line in f:
+      data.append([int(x) for x in line.split()]) 
+    return data   
+
+#轉換成frozenset
+def data2frozenset_single(data):
+    return frozenset(data), 1
+
+def data2frozenset_parallel(dataset):
+    with Pool(CPU_COUNT) as p:
+        result = p.map(data2frozenset_single, dataset)
+    return dict(result)
+
+def data2frozenset(dataset):
+    frozenSet = {}
+    for data in dataset:
+        frozenSet[frozenset(data)] = 1
+    return frozenSet
+    
+#-----------------------建FP tree-------------------------------
+class FPtree_node:
+    def __init__(self, name, count, parent):
+        self.name = name
+        self.count = count
+        self.parent = parent
+        self.child = {}
+        self.nextSimilarItem = None
+        
+    #計算出現次數    
+    def inc(self, num):
+        self.count += num
+        
+    #印出樹的路徑       
+    def display(self, ind=1):
+        print ('  '*ind, self.name, ' ', self.count)
+        for child in self.child.values():
+            child.display(ind+1)
+              
+        
+def createFPtree(dataset):
+    headPointTable = {}
+    
+    #計算出現次數
+    #print(dataset)
+    for data in dataset:
+        for item in data:
+            headPointTable[item] = headPointTable.get(item, 0) + dataset[data]  
+    # print(len(headPointTable))
+    #for itm, val in headPointTable.items():
+    #    print(itm, val)
+    
+    #只留下>=MIN_SUPPORT的item
+    headPointTable = {name:cnt for name, cnt in headPointTable.items() if cnt >= MIN_SUPPORT}
+    freq_items = set(headPointTable.keys())
+    # print(len(freq_items))
+    #沒有任何元素
+    if len(freq_items)==0: return None, None
+    
+    for k in headPointTable:
+        headPointTable[k] = [headPointTable[k], None]  #指到下一個similiar Item
+        
+    #建立fp tree
+    fp_tree = FPtree_node('null set', 1, None) 
+    
+    #把資料看過第二遍
+    for items, cnt in dataset.items():
+        keep_freq_items = {}
+        
+        #只留下出現在freq_items的item
+        for item in items:
+            if item in freq_items:
+                keep_freq_items[item] = headPointTable[item][0]
+            
+            
+        if len(keep_freq_items) > 0:
+            #用item出現次數，由大到小排序
+            orderedFrequentItems = [v[0] for v in sorted(keep_freq_items.items(),key = lambda v: (v[1], v[0]),reverse = True)]
+            #更新FP tree
+            updateFPtree(orderedFrequentItems, fp_tree, headPointTable, cnt)
+        
+    return fp_tree, headPointTable
+    
+def updateFPtree(items, fp_tree, headPointTable, cnt):
+    if items[0] in fp_tree.child:
+        fp_tree.child[items[0]].inc(cnt)
+    else:
+        #如不存在子節點，新增一個新的子節點
+        fp_tree.child[items[0]] = FPtree_node(items[0], cnt, fp_tree)
+        #指到下一個
+        if headPointTable[items[0]][1] == None:  
+            headPointTable[items[0]][1] = fp_tree.child[items[0]]
         else:
-            rs+='0'
-        n>>=1
-    return rs[::-1]
-# read data and transform to bit 
-data =[]
-with open(file_path, 'r') as file:
-    for line in file:
-        row = [int(x) for x in line.strip().split()]
-        data.append(row)
-#debug
-# for i in data:
-#     print(i)
-
-# #count item count in itemCnt 
-itemCnt = np.zeros(120,dtype=int)
-for i in data:
-    for j in i:
-        itemCnt[j]+=1
-
-class TreeNode:
-    def __init__(self, value=None):
-        self.value = value
-        self.count = 1
-        self.children = {}
-        self.parent = None
-
-class Trie:
-    def __init__(self):
-        self.root = TreeNode()
-        self.leaves = []
-
-    def insert(self, items):
-        node = self.root
-        for element in items:
-            if element not in node.children:
-                new_node = TreeNode(element)
-                new_node.parent = node
-                node.children[element] = new_node
-            else:
-                node.children[element].count += 1
-            node = node.children[element]
-        self.leaves.append(node)
-
-    def traverse_to_root(self, leaf):
-        path = []
-        node = leaf
-        while node.parent is not None:
-            path.append(node.value)
-            node = node.parent
-        return path[::-1]
-def print_trie(node, level=0):
-    # Base case: if the node is None, return
-    if node is None:
+            updateHeadPointTable(headPointTable[items[0]][1], fp_tree.child[items[0]])
+    
+    #遞迴往下找
+    if len(items) > 1:
+        updateFPtree(items[1::], fp_tree.child[items[0]], headPointTable, cnt)
+        
+#找到最後一個，再把targetNode放入
+def updateHeadPointTable(headPointBeginNode, targetNode):
+    while (headPointBeginNode.nextSimilarItem != None):    
+        headPointBeginNode = headPointBeginNode.nextSimilarItem
+    headPointBeginNode.nextSimilarItem = targetNode
+        
+#------------------挖掘頻繁項集------------------------------------------   
+   
+def mineFPTree(header:dict, prefix:set, frequent_set:set):
+    if len(prefix) >= PATTERN_LEN:
         return
+    # for each item in header, then iterate until there is only one element in conditional fptree
+    #print(header.keys())
+    # header_items = header
+    header_items = [val[0] for val in sorted(header.items(), key=lambda val: val[1][0])] # val[0] for item name, val[1][0] for item count
+    #print(header_items)
+    if len(header_items) == 0:
+        return
+    
+    for item in header_items:
+        new_prefix = prefix.copy()
+        new_prefix.add(item)
+        support = header[item][0]
+        frequent_set[frozenset(new_prefix)] = support
+        
+        #print(item)
+        prefix_path = findPrefixPath(header, item)
+        #print(item[1][1])
+        if len(prefix_path) != 0:
+            conditional_tree, conditional_header = createFPtree(prefix_path)
+            if conditional_header is not None:
+                mineFPTree(conditional_header, new_prefix, frequent_set)
 
-    # Print the current node
-    indent = " " * (level * 4)
-    node_info = f"{indent}Node: {node.value}, Count: {node.count}" if node.value is not None else "Root"
-    print(node_info)
+#--------------------產生關連規則----------------------------------------
 
-    # Recursively print each child
-    for child in node.children.values():
-        print_trie(child, level + 1)
+def rule_generator(frequent_item, frequent_item_count, subset_counts):
+    counter = 0
+    subsets = [subset for i in range(1, len(frequent_item)) for subset in combinations(frequent_item, i)]
+    for s in subsets:
+        subset_key = frozenset(s)
+        # 確保子集的鍵存在於 subset_counts 中
+        if subset_key in subset_counts:
+            confidence = float(frequent_item_count / subset_counts[subset_key])
+            if confidence >= MIN_CONFIDENCE:
+                counter += 1
+        # else:
+        #     # 如果子集不在 subset_counts 中，可能需要處理這種情況
+        #     pass  # 或者添加適當的處理代碼
+    return counter
 
+def generateRulesParallel(frequent_set):
+    tasks = []
+    for item in frequent_set:
+        item_count = frequent_set[frozenset(item)]
+        # 只包括那些存在於 frequent_set 中的子集
+        subset_counts = {frozenset(s): frequent_set[frozenset(s)] for s in combinations(item, len(item) - 1) if frozenset(s) in frequent_set}
+        tasks.append((item, item_count, subset_counts))
+    
+    with Pool(CPU_COUNT) as p:
+        results = p.starmap(rule_generator, tasks)
 
-# for i in processed_data:
-#     tmp = i
-#     # itemCnt[i][1]=idx
-#     while tmp:
-#         lb=tmp&-tmp
-#         tmp &= ~lb
-#         id=0
-#         while lb:
-#             lb>>=1
-#             id+=1
-#         itemCnt[id-1][0]+=1
-# minCnt=2
-# delete_mask=0
-# for i in range(0,120):
-#     if itemCnt[i][0] < minCnt:
-#         delete_mask|=(1<<i)
+    total_counter = sum(results)
+    print(total_counter)
 
+#---------------------計算每個長度的frequent_set-------------------------
 
-# for i in range(0,120):
-#     itemCnt[i][1]=i
-# sorted_itemCnt=itemCnt[np.argsort(itemCnt[:, 0])]
-# # #debug
-# # for id,i in enumerate(sorted_itemCnt):
-# #     print(id,i[0],i[1],sep=":")
+def cnt_each_len_freq_item(freq_set:set):
+    cnt = [0,0,0,0,0,0,0,0,0,0,0]
+    # cnt = [0,0,0,0,0,0]
+    for item in freq_set:
+        cnt[len(item)] += 1
+    for idx in range(1,len(cnt)):
+        print('|L^{}|={}'.format(idx,cnt[idx]))
+        
+#---------------------印出路徑-------------------------------------------
 
-mask = (1<<120)-1
-delete_mask=~delete_mask&mask
-#debug
-# print(int_to_binary(delete_mask))
-# print(delete_mask)
+#每個nextSimilarItem，都呼叫ascendTree往上找路徑
+def findPrefixPath(headPointTable, node): 
+    condPaths = {}
+    treenode = headPointTable[node][1]
+    prefixPath = ascendTree(treenode)
+    if(len(prefixPath)):
+        condPaths[frozenset(prefixPath)] = treenode.count
 
-for i in range(0,8124):
-    processed_data[i]&=delete_mask
-#debug
-# for i in processed_data:
-#     print(int_to_binary(i))
-
-tops = np.zeros(120,dtype=int)
-
-trees = [[0 for _ in range(8125)] for _ in range(120)]
-
-#預處理每個數字對於每個數字出現在相同筆數的數量
-match = np.zeros((120, 120),dtype=int)
-for i in range(1,120):
-    cur = (1<<i)
-    for j in range(0,8125):
-        if cur&processed_data[j]:#如果有i出現在這筆
-
-            trees[i][tops[i]]=processed_data[j]#建樹
-            tops[i]+=1
-
-            bit=2
-            for k in range(1,120):
-                if bit&processed_data[j]:#第k個item有跟i一起出現在同一筆，match[i][k]+=1
-                    match[i][k]+=1
-                bit<<=1
+    while treenode.nextSimilarItem != None:
+        treenode = treenode.nextSimilarItem     #往下一個similarItem找
+        prefixPath = ascendTree(treenode)
+        if len(prefixPath): 
+            condPaths[frozenset(prefixPath)] = treenode.count
+        
+    return condPaths 
 
 
+#把到root經過的點都加入prefixs
+def ascendTree(node): 
+    prefixs = []
+    while (node.parent != None) and (node.parent.name != 'null set'):
+        node = node.parent
+        prefixs.append(node.name)
+    return  prefixs   
 
-vis = np.zeros(120,dtype=int)
-allset=set()
-for i in sorted_itemCnt:#i是現在tree的index
-    if i[0]<2:
-        continue
-    # print(f"now tree idx: {i[1]}")
-    for j in range(0,tops[i[1]]):# 遍歷所有子樹,j是子樹的index
-        bit = 2
-        itemSet = []
-        # print("other set node: ")
-        for k in range(1,120):
-            if bit&trees[i[1]][j] and match[i[1]][k]>=2 and vis[k]==0:
-                # print(k,end="")
-                itemSet.append(k)
-            bit<<=1
-        # print(itemSet)
-        allset.add(tuple(itemSet))
-    i[0]=0
-    vis [i[1]]=1
-end_time=time.time()
-print(f'All processes have completed. cost {end_time-start_time} s')
-
-# for i in allset:
-#     print(i)
-
-#debug
-# for i in range(1,27):
-#     for j in range(1,27):
-#         print(match[i][j],end="")
-#     print("")
-
+if __name__=='__main__':
+    begin_time = time.time()
+    data = LoadData()
+         
+    fp_tree, headpointList = createFPtree(data2frozenset(data))
+    frequent_set = {}
+    prefix = set([])
+    mineFPTree(headpointList, prefix, frequent_set)
+    generateRulesParallel(frequent_set)
+    
+    cnt_each_len_freq_item(frequent_set)
+    print(time.time() - begin_time)
