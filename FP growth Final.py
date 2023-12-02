@@ -4,25 +4,13 @@ from multiprocessing import Pool
 import time
 
 CPU_COUNT = 24
-PATTERN_LEN = 10          #最多一次看5個item   
-MIN_SUPPORT = 813        #最少出現次數
-MIN_CONFIDENCE = 0.8    #confidence最低門檻
-#--------------------------載入data----------------------------
+PATTERN_LEN = 10     #最多一次看5個item   
+MIN_SUPPORT = 813    #最少出現次數
+MIN_CONFIDENCE = 0.8 #confidence最低門檻
+
 def LoadData():
-  with open("date/mushroom.dat", 'r') as f:
-    data = []
-    for line in f:
-      data.append([int(x) for x in line.split()]) 
-    return data   
-
-#轉換成frozenset
-def data2frozenset_single(data):
-    return frozenset(data), 1
-
-def data2frozenset_parallel(dataset):
-    with Pool(CPU_COUNT) as p:
-        result = p.map(data2frozenset_single, dataset)
-    return dict(result)
+    with open("date/mushroom.dat", 'r') as f:
+        return [[int(x) for x in line.split()] for line in f]
 
 def data2frozenset(dataset):
     frozenSet = {}
@@ -30,8 +18,7 @@ def data2frozenset(dataset):
         frozenSet[frozenset(data)] = 1
     return frozenSet
     
-#-----------------------建FP tree-------------------------------
-class FPtree_node:
+class Node:
     def __init__(self, name, count, parent):
         self.name = name
         self.count = count
@@ -44,28 +31,24 @@ class FPtree_node:
         self.count += num
         
     #印出樹的路徑       
-    def display(self, ind=1):
-        print ('  '*ind, self.name, ' ', self.count)
-        for child in self.child.values():
-            child.display(ind+1)
+    # def display(self, ind=1):
+    #     print ('  '*ind, self.name, ' ', self.count)
+    #     for child in self.child.values():
+    #         child.display(ind+1)
               
         
 def createFPtree(dataset):
     headPointTable = {}
     
     #計算出現次數
-    #print(dataset)
     for data in dataset:
         for item in data:
             headPointTable[item] = headPointTable.get(item, 0) + dataset[data]  
-    # print(len(headPointTable))
-    #for itm, val in headPointTable.items():
-    #    print(itm, val)
     
     #只留下>=MIN_SUPPORT的item
     headPointTable = {name:cnt for name, cnt in headPointTable.items() if cnt >= MIN_SUPPORT}
     freq_items = set(headPointTable.keys())
-    # print(len(freq_items))
+
     #沒有任何元素
     if len(freq_items)==0: return None, None
     
@@ -73,7 +56,7 @@ def createFPtree(dataset):
         headPointTable[k] = [headPointTable[k], None]  #指到下一個similiar Item
         
     #建立fp tree
-    fp_tree = FPtree_node('null set', 1, None) 
+    fp_tree = Node('null set', 1, None) 
     
     #把資料看過第二遍
     for items, cnt in dataset.items():
@@ -83,7 +66,6 @@ def createFPtree(dataset):
         for item in items:
             if item in freq_items:
                 keep_freq_items[item] = headPointTable[item][0]
-            
             
         if len(keep_freq_items) > 0:
             #用item出現次數，由大到小排序
@@ -98,7 +80,7 @@ def updateFPtree(items, fp_tree, headPointTable, cnt):
         fp_tree.child[items[0]].inc(cnt)
     else:
         #如不存在子節點，新增一個新的子節點
-        fp_tree.child[items[0]] = FPtree_node(items[0], cnt, fp_tree)
+        fp_tree.child[items[0]] = Node(items[0], cnt, fp_tree)
         #指到下一個
         if headPointTable[items[0]][1] == None:  
             headPointTable[items[0]][1] = fp_tree.child[items[0]]
@@ -120,11 +102,8 @@ def updateHeadPointTable(headPointBeginNode, targetNode):
 def mineFPTree(header:dict, prefix:set, frequent_set:set):
     if len(prefix) >= PATTERN_LEN:
         return
-    # for each item in header, then iterate until there is only one element in conditional fptree
-    #print(header.keys())
-    # header_items = header
-    header_items = [val[0] for val in sorted(header.items(), key=lambda val: val[1][0])] # val[0] for item name, val[1][0] for item count
-    #print(header_items)
+    # val[0] for item name, val[1][0] for item count
+    header_items = [val[0] for val in sorted(header.items(), key=lambda val: val[1][0])] 
     if len(header_items) == 0:
         return
     
@@ -133,10 +112,7 @@ def mineFPTree(header:dict, prefix:set, frequent_set:set):
         new_prefix.add(item)
         support = header[item][0]
         frequent_set[frozenset(new_prefix)] = support
-        
-        #print(item)
         prefix_path = findPrefixPath(header, item)
-        #print(item[1][1])
         if len(prefix_path) != 0:
             conditional_tree, conditional_header = createFPtree(prefix_path)
             if conditional_header is not None:
@@ -151,12 +127,9 @@ def rule_generator(frequent_item, frequent_item_count, subset_counts):
         subset_key = frozenset(s)
         # 確保子集的鍵存在於 subset_counts 中
         if subset_key in subset_counts:
-            confidence = float(frequent_item_count / subset_counts[subset_key])
-            if confidence >= MIN_CONFIDENCE:
+            confidence = frequent_item_count *10
+            if confidence >= subset_counts[subset_key]*8:
                 counter += 1
-        # else:
-        #     # 如果子集不在 subset_counts 中，可能需要處理這種情況
-        #     pass  # 或者添加適當的處理代碼
     return counter
 
 def generateRulesParallel(frequent_set):
