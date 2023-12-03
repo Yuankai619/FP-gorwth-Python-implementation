@@ -2,7 +2,7 @@ from collections import defaultdict
 from itertools import combinations
 from multiprocessing import Pool
 import time
-CPU_COUNT = 24
+CPU_COUNT = 48
 PATTERN_LEN = 10     #最多一次看5個item   
 MIN_SUPPORT = 813    #最少出現次數
 MIN_CONFIDENCE = 0.8 #confidence最低門檻
@@ -87,7 +87,7 @@ def updateHeadPointTable(originNode, insertNode):
     while (originNode.nextSimilarItem != None):    
         originNode = originNode.nextSimilarItem
     originNode.nextSimilarItem = insertNode    
-    
+# @functools.lru_cache
 def mineFPTree(header:dict, prefix:set, frequent_set:set):#挖掘頻繁項集
     if len(prefix) >= PATTERN_LEN:
         return
@@ -106,6 +106,7 @@ def mineFPTree(header:dict, prefix:set, frequent_set:set):#挖掘頻繁項集
             conditional_tree, conditional_header = createFPtree(prefix_path)
             if conditional_header is not None:
                 mineFPTree(conditional_header, new_prefix, frequent_set)
+
 def rule_generator(frequent_item, frequent_item_count, subset_counts):#計算association rule數目的平行運算單元
     counter = 0
     subsets = [subset for i in range(1, len(frequent_item)) for subset in combinations(frequent_item, i)]
